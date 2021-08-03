@@ -30,6 +30,28 @@ SRC_URI += "file://0001-add-supported-pmbus-name-cffps1.patch \
             file://0037-Fix-cpu-sensor-hang-and-get-power-status-error.patch \
             file://0038-Add-watchdog2-and-power-control-event-sensor.patch \
             file://0039-Add-DCMI-power-event-sensor.patch \
+            file://0040-change-ADC-range-to-be-configurable.patch \
+            file://0041-add-assert-value-to-log-event-data.patch \
+            file://0042-Stop-the-timer-when-the-deasserted-events-occur.patch \
+            file://0043-add-offset-value-for-E810-OCP-card.patch \
+            file://0044-log-assert-event-when-timer-cancelled.patch \
+            file://0045-filter-out-invalidate-ADC-value.patch \
+            file://0047-Filter-out-invalidate-MOS-temperature-value-and-add-.patch \
+            file://0046-add-BMC-watchdog-timeout-SEL.patch \
+            file://0048-Add-event-disabled-event-sensor.patch \
+            file://0049-filter-out-invalidate-sys-air-inlet-value.patch \
+            file://0050-Update-BMC-watchdog-timeout-SEL.patch \
+            file://0051-Implement-the-average-mode-for-fan-tech-value.patch \
+            file://0052-Change-the-using-timer-from-deadline_timer-to-steady.patch \
+            file://0053-add-ADC-boundary-retry.patch \
+            file://0054-Implement-the-average-mode-for-PSU-fan-sensor-value.patch \
+            file://0055-Add-the-debug-log-for-dimm-sensor.patch \
+            file://0056-create-bmc-reset-flag.patch \
+            file://0057-Add-Fast-Prochot-event-only-sensor.patch \
+            file://0058-Filter-out-dimm-temperature-boundary-value-and-retry.patch \
+            file://0059-Add-retries-into-power-control-status-commands.patch \
+            file://0060-Add-AMT-event-sensor.patch \
+            file://0061-Change-CPU-sensor-reading-function-to-thread-functio.patch \
             "
 
 SYSTEMD_SERVICE_${PN} += " xyz.openbmc_project.processorsensor.service"
@@ -39,4 +61,10 @@ SYSTEMD_SERVICE_${PN} += " xyz.openbmc_project.mnvmesensor.service"
 SYSTEMD_SERVICE_${PN} += " xyz.openbmc_project.mostempsensor.service"
 SYSTEMD_SERVICE_${PN} += " xyz.openbmc_project.hostmemoryeccsensor.service"
 SYSTEMD_SERVICE_${PN} += " xyz.openbmc_project.eventsensor.service"
+
+DEPENDS += "obmc-libmisc"
+
+RDEPENDS_${PN} += "obmc-libmisc"
+
+
 

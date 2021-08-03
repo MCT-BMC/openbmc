@@ -8,8 +8,8 @@
     {
          "ownerId" : "0x1f",
          "sensorNumber" : "0xe5",
-         "sensorType" : "0x12",
-         "sensorName" : "Power Override"
+         "sensorType" : "0x22",
+         "sensorName" : "POWER OVERRIDE"
     },
     {
          "ownerId" : "0x3f",
@@ -39,25 +39,25 @@
          "ownerId" : "0x3f",
          "sensorNumber" : "0x2C",
          "sensorType" : "0x0C",
-         "sensorName" : "CPU0_MC0_D0"
+         "sensorName" : "CPU0_MC1_D0"
     },
     {
          "ownerId" : "0x3f",
          "sensorNumber" : "0x30",
          "sensorType" : "0x0C",
-         "sensorName" : "CPU0_MC0_E0"
+         "sensorName" : "CPU0_MC1_E0"
     },
     {
          "ownerId" : "0x3f",
          "sensorNumber" : "0x31",
          "sensorType" : "0x0C",
-         "sensorName" : "CPU0_MC0_E1"
+         "sensorName" : "CPU0_MC1_E1"
     },
     {
          "ownerId" : "0x3f",
          "sensorNumber" : "0x34",
          "sensorType" : "0x0C",
-         "sensorName" : "CPU0_MC0_F0"
+         "sensorName" : "CPU0_MC1_F0"
     },
     {
          "ownerId" : "0x3f",
@@ -87,31 +87,67 @@
          "ownerId" : "0x3f",
          "sensorNumber" : "0x6C",
          "sensorType" : "0x0C",
-         "sensorName" : "CPU1_MC0_D0"
+         "sensorName" : "CPU1_MC1_D0"
     },
     {
          "ownerId" : "0x3f",
          "sensorNumber" : "0x70",
          "sensorType" : "0x0C",
-         "sensorName" : "CPU1_MC0_E0"
+         "sensorName" : "CPU1_MC1_E0"
     },
     {
          "ownerId" : "0x3f",
          "sensorNumber" : "0x71",
          "sensorType" : "0x0C",
-         "sensorName" : "CPU1_MC0_E1"
+         "sensorName" : "CPU1_MC1_E1"
     },
     {
          "ownerId" : "0x3f",
          "sensorNumber" : "0x74",
          "sensorType" : "0x0C",
-         "sensorName" : "CPU1_MC0_F0"
+         "sensorName" : "CPU1_MC1_F0"
     },
     {
-        "ownerId" : "0x2c",
-        "sensorNumber" : "0x08",
-        "sensorType" : "0x01",
-        "sensorName" : "PCH_temperature"
+          "ownerId" : "0x21",
+          "sensorNumber" : "0x80",
+          "sensorType" : "0x13",
+          "sensorName" : "NVME0"
+    },
+    {
+          "ownerId" : "0x21",
+          "sensorNumber" : "0x81",
+          "sensorType" : "0x13",
+          "sensorName" : "NVME1"
+    },
+    {
+          "ownerId" : "0x21",
+          "sensorNumber" : "0x82",
+          "sensorType" : "0x13",
+          "sensorName" : "NVME2"
+    },
+    {
+          "ownerId" : "0x21",
+          "sensorNumber" : "0x83",
+          "sensorType" : "0x13",
+          "sensorName" : "NVME3"
+    },
+    {
+          "ownerId" : "0x21",
+          "sensorNumber" : "0x84",
+          "sensorType" : "0x13",
+          "sensorName" : "OCP"
+    },
+    {
+          "ownerId" : "0x21",
+          "sensorNumber" : "0x85",
+          "sensorType" : "0x13",
+          "sensorName" : "VGA"
+     },
+    {
+         "ownerId" : "0x2c",
+         "sensorNumber" : "0x08",
+         "sensorType" : "0x01",
+         "sensorName" : "PCH_temperature"
     },
     {
          "ownerId" : "0x2c",
@@ -124,6 +160,12 @@
          "sensorNumber" : "0x80",
          "sensorType" : "0x21",
          "sensorName" : "USB_Status"
+     },
+     {
+         "ownerId" : "0x20",
+         "sensorNumber" : "0xfe",
+         "sensorType" : "0x2b",
+         "sensorName" : "IB BMC FW UPDATE"
      }
 
 ]

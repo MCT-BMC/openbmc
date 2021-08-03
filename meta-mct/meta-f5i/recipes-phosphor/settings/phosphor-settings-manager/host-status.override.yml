@@ -1,0 +1,10 @@
+---
+/xyz/openbmc_project/oem/HostStatus:
+    - Interface: xyz.openbmc_project.OEM.HostStatus
+      Properties:
+          AmtStatus:
+              Default: 0
+          AmtMonitorStatus:
+              Default: 0
+          watchdog2Status:
+              Default: 0

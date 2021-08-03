@@ -30,6 +30,8 @@
 #include <sdbusplus/bus.hpp>
 #include <sdbusplus/message/types.hpp>
 #include <peci.h>
+#include <nlohmann/json.hpp>
+
 
 #include "xyz/openbmc_project/Control/Power/RestorePolicy/server.hpp"
 
@@ -54,23 +56,20 @@ namespace ipmi
 static int getProperty(sdbusplus::bus::bus& bus, const std::string& path,
                  const std::string& property, double& value, const std::string service, const std::string interface)
 {
+    sdbusplus::message::variant<double> valuetmp;
     auto method = bus.new_method_call(service.c_str(), path.c_str(), PROPERTY_INTERFACE, "Get");
     method.append(interface.c_str(),property);
-    auto reply=bus.call(method);
-    if (reply.is_method_error())
-    {
-        std::printf("Error looking up services, PATH=%s",interface.c_str());
-        return -1;
-    }
-
-    sdbusplus::message::variant<double> valuetmp;
     try
     {
+        auto reply=bus.call(method);
+        if (reply.is_method_error())
+        {
+            std::printf("Error looking up services, PATH=%s",interface.c_str());
+            return -1;
+        }
         reply.read(valuetmp);
     }
-    catch (const sdbusplus::exception::SdBusError& e)
-    {
-        std::printf("Failed to get pattern string for match process");
+    catch (const sdbusplus::exception::SdBusError& e){
         return -1;
     }
 
@@ -159,33 +158,31 @@ void createTimer()
     }
 }
 
-/*
-    NetFun: 0x3e
-    Cmd : 0x3a
-    Request:
-*/
-ipmi_ret_t ipmiOpmaClearCmos(ipmi_netfn_t netfn, ipmi_cmd_t cmd,
-                              ipmi_request_t request, ipmi_response_t response,
-                              ipmi_data_len_t data_len, ipmi_context_t context)
-{
-    ipmi_ret_t ipmi_rc = IPMI_CC_OK;
+/* Clear CMOS command
+NetFun: 0x30
+Cmd : 0x3A
+Request:
 
+Response:
+        Byte 1 : Completion Code
+*/
+ipmi::RspType<> ipmi_opma_clear_cmos()
+{
     //todo, check pgood status
     createTimer();
     if (clrCmosTimer == nullptr)
     {
-        return IPMI_CC_RESPONSE_ERROR;
+        return ipmi::responseResponseError();
     }
     
     if(clrCmosTimer->isRunning())
     {
-        return IPMI_CC_RESPONSE_ERROR;
+        return ipmi::responseResponseError();
     }
     clrCmosTimer->start(std::chrono::duration_cast<std::chrono::microseconds>(
     std::chrono::seconds(0)));    
    
-    return ipmi_rc;
-
+    return ipmi::responseSuccess();
 }
 //===============================================================
 /* Set Fan Control Enable Command
@@ -310,6 +307,8 @@ ipmi::RspType<uint8_t> ipmi_tyan_FanPwmDuty(uint8_t pwmId, uint8_t duty)
     char temp[50];
     uint8_t responseDuty;
     uint8_t pwmValue = 0;
+    char FSCStatus[100];
+    uint8_t currentStatus;
 
     if (duty == 0xfe)
     {
@@ -365,43 +364,56 @@ ipmi::RspType<uint8_t> ipmi_tyan_FanPwmDuty(uint8_t pwmId, uint8_t duty)
     }
     else if (duty <= 0x64)
     {
-        memset(command,0,sizeof(command));
-        sprintf(command, "systemctl stop phosphor-pid-control.service");
-        rc = system(command);
-
-        memset(command,0,sizeof(command));
-        sprintf(command, "echo 0 > /usr/sbin/fsc");
-        system(command);
-
-        // control duty cycle (0%-100%)
-        pwmValue = duty*255/100;
-
-        switch (pwmId)
+        // Get Current Fan Control Status
+        file.open("/usr/sbin/fsc",std::ios::in);
+        if(!file)
         {
-            case 0:
+            currentStatus=1;
+        }
+        else
+        {
+            file.read(FSCStatus,sizeof(FSCStatus));
+            currentStatus = strtol(FSCStatus,NULL,16);
+        }
+        file.close();
+
+        if(currentStatus == 0x0)
+        {
+            // control duty cycle (0%-100%)
+            pwmValue = duty*255/100;
+
+            switch (pwmId)
+            {
+                case 0:
                     memset(command,0,sizeof(command));
                     sprintf(command, "echo %d > /sys/class/hwmon/hwmon0/pwm1", pwmValue);
                     break;
-            case 1:
+                case 1:
                     memset(command,0,sizeof(command));
                     sprintf(command, "echo %d > /sys/class/hwmon/hwmon0/pwm2", pwmValue);
                     break;
-            case 2:
+                case 2:
                     memset(command,0,sizeof(command));
                     sprintf(command, "echo %d > /sys/class/hwmon/hwmon0/pwm3", pwmValue);
                     break;
-            case 3:
+                case 3:
                     memset(command,0,sizeof(command));
                     sprintf(command, "echo %d > /sys/class/hwmon/hwmon0/pwm4", pwmValue);
                     break;
-            case 4:
+                case 4:
                     memset(command,0,sizeof(command));
                     sprintf(command, "echo %d > /sys/class/hwmon/hwmon0/pwm5", pwmValue);
                     break;
-            default:
+                default:
                     return ipmi::responseParmOutOfRange();
+            }
+            rc = system(command);
         }
-        rc = system(command);
+        else
+        {
+            // fan control is Enable , can't control fan duty
+            return ipmi::responseUnspecifiedError();
+        }
     }
     else
     {
@@ -521,7 +533,7 @@ ipmi::RspType<std::optional<uint8_t>, // T1
 {
 
     constexpr const char* leakyBucktPath =
-        "/xyz/openbmc_project/sensors/leakyBucket/HOST_DIMM_ECC";
+        "/xyz/openbmc_project/leakyBucket/HOST_DIMM_ECC";
     constexpr const char* leakyBucktIntf =
         "xyz.openbmc_project.Sensor.Value";
     std::shared_ptr<sdbusplus::asio::connection> busp = getSdBus();
@@ -579,7 +591,219 @@ ipmi::RspType<std::optional<uint8_t>, // T1
    
 }
 
-//===============================================================
+
+
+//================================================================================================
+static boost::container::flat_map<uint8_t, std::string> eccMap;
+
+struct csrData {
+    uint32_t device;
+    uint32_t function;
+    uint32_t bus;
+};
+
+std::map<std::string,csrData> dimmCsr =
+{
+    {"CPU0_MC0_A0",{0x0a,0x03,0x02}},
+    {"CPU0_MC0_B0",{0x0a,0x07,0x02}},
+    {"CPU0_MC0_C0",{0x0b,0x03,0x02}},
+    {"CPU0_MC1_D0",{0x0c,0x03,0x02}},
+    {"CPU0_MC1_E0",{0x0c,0x07,0x02}},
+    {"CPU0_MC1_F0",{0x0d,0x03,0x02}},
+    {"CPU1_MC0_A0",{0x0a,0x03,0x02}},
+    {"CPU1_MC0_B0",{0x0a,0x07,0x02}},
+    {"CPU1_MC0_C0",{0x0b,0x03,0x02}},
+    {"CPU1_MC1_D0",{0x0c,0x03,0x02}},
+    {"CPU1_MC1_E0",{0x0c,0x07,0x02}},
+    {"CPU1_MC1_F0",{0x0d,0x03,0x02}},
+};
+
+//MCT ecc filter
+static constexpr const char* sdrFile = "/usr/share/ipmi-providers/sdr.json";
+constexpr static const uint16_t biosId = 0x3f;
+constexpr static const uint8_t sensorTypeMemory = 0xc;
+constexpr static const uint8_t eventDataMemCorrectableEcc = 0;
+
+static void loadEccMap(void)
+{
+    static bool loaded = false;
+    uint16_t ownerId;
+    uint8_t sensorNum;
+    uint8_t sensorType;
+    std::string sensorName;
+    
+    if(loaded)
+    {
+        return; 
+    }
+    loaded = true; 
+
+    eccMap.clear();
+    std::ifstream sdrStream(sdrFile);
+    if(!sdrStream.is_open())
+    {
+        std::cerr << "NO defined SDR found\n";
+    }
+    else
+    {
+        auto data = nlohmann::json::parse(sdrStream, nullptr, false);
+        if (data.is_discarded())
+        {
+            std::cerr << "syntax error in " << sdrFile << "\n";
+        }
+        else
+        {
+            int idx = 0;
+            while (!data[idx].is_null())
+            {
+                ownerId = std::stoul((std::string)data[idx]["ownerId"], nullptr, 16);  
+                sensorNum = std::stoul((std::string)data[idx]["sensorNumber"], nullptr, 16);   
+                sensorType = std::stoul((std::string)data[idx]["sensorType"], nullptr, 16);
+                sensorName = data[idx]["sensorName"];
+                if(biosId == ownerId && sensorTypeMemory == sensorType)
+                {
+                    eccMap[sensorNum] = sensorName;
+                }
+                idx++;
+            }
+        }
+        sdrStream.close();
+    }
+   
+    for(auto const& pair:eccMap)
+    {
+        std::cerr << (unsigned)pair.first << ":" << pair.second << '\n';
+    }
+   
+}
+
+int peciWrPkgConfig(uint8_t target, uint8_t u8Index, uint16_t u16Param,
+                    uint32_t u32Value, uint8_t u8WriteLen)
+{
+    uint8_t cc = 0;
+
+    if (peci_WrPkgConfig(target, u8Index, u16Param, u32Value, u8WriteLen, &cc) != PECI_CC_SUCCESS)
+    {
+        return -1;
+    }
+
+    if(cc != PECI_DEV_CC_SUCCESS)
+    {
+       return -1;
+    }
+    return 0;
+}
+
+int peciRdPkgConfig(uint8_t target, uint8_t u8Index, uint16_t u16Value,
+                    uint8_t u8ReadLen, uint8_t* pPkgConfig)
+{
+    uint8_t cc = 0;
+
+    if (peci_RdPkgConfig(target, u8Index, u16Value, u8ReadLen, pPkgConfig, &cc) != PECI_CC_SUCCESS)
+    {
+        return -1;
+    }
+
+    if(cc != PECI_DEV_CC_SUCCESS)
+    {
+       return -1;
+    }
+    return 0;
+}
+
+/*-------------------------------------
+ * OemGetEccCount(NetFn: 0x2E, Cmd: 0x1B)
+ * Request:
+ *   Byte 1: 0xfd
+ *   Byte 2: 0x19
+ *   Byte 3: 0x00
+ *   Byte 4: DIMM (Sensor Number for ECC event)
+ * Response:
+ *   Byte 1: Completion Code
+ *   Byte 2: 0xfd
+ *   Byte 3: 0x19
+ *   Byte 4: 0x00
+ *   Byte 5: Correctable rank 0 ECC Count
+ *   Byte 6: Correctable rank 1 ECC Count
+ *   Byte 7: Correctable rank 2 ECC Count
+ *   Byte 8: Correctable rank 3 ECC Count
+ *------------------------------------*/
+ipmi::RspType<std::vector<uint8_t>> ipmiGetEccCount(uint8_t sensorNum)
+{
+    constexpr static const uint32_t DEFAULT_OFFSET = 0x104;
+    constexpr static const uint32_t DEFAULT_LENGTH = 0x03;
+    constexpr static const uint8_t CSR_INDEX = 0x80;
+
+    std::vector<uint8_t> rank(4,0);
+    uint32_t correrrcnt0 = 0xFFFFFFFF;
+    uint32_t correrrcnt1 = 0xFFFFFFFF;
+    uint8_t cpuId = 0x30;
+
+    loadEccMap();
+
+    auto ecc = eccMap.find(sensorNum);
+    //find ecc in eccMap
+    if (ecc == eccMap.end())
+    {
+        return ipmi::responseInvalidFieldRequest();
+    }
+
+    std::map<std::string,csrData>::iterator it;
+    it = dimmCsr.find(ecc->second);
+    if (it == dimmCsr.end())
+    {
+        return ipmi::responseInvalidFieldRequest();
+    }
+
+    if(ecc->second.find("CPU0") != std::string::npos)
+    {
+        cpuId = 0x30;
+    }
+    else if(ecc->second.find("CPU1") != std::string::npos)
+    {
+        cpuId = 0x31;
+    }
+
+    // calculate configuration data for CSR or MMIO configuration read sequence
+    uint32_t offset = (DEFAULT_OFFSET << 16) & 0xffff0000;
+    uint32_t device = (it->second.device << 11) & 0x0000F800;
+    uint32_t function = (it->second.function << 8) & 0x00000700;
+    uint32_t bus = (it->second.bus << 4) & 0x00000070;
+    uint32_t length = (DEFAULT_LENGTH) & 0x00000003;
+    uint32_t configData = offset + device + function + bus + length;
+
+    // PECI flow for CSR or MMIO configuration read sequence
+    if(peciWrPkgConfig(cpuId, CSR_INDEX, 0x0003, 0x00000002, sizeof(uint32_t)))
+    {
+        return ipmi::responseUnspecifiedError();
+    }
+    if(peciWrPkgConfig(cpuId, CSR_INDEX, 0x0010, configData, sizeof(uint32_t)))
+    {
+        return ipmi::responseUnspecifiedError();
+    }
+    if(peciRdPkgConfig(cpuId, CSR_INDEX, 0x0002, sizeof(uint32_t), reinterpret_cast<uint8_t*> (&correrrcnt0)))
+    {
+        return ipmi::responseUnspecifiedError();
+    }
+    if(peciRdPkgConfig(cpuId, CSR_INDEX, 0x0002, sizeof(uint32_t), reinterpret_cast<uint8_t*> (&correrrcnt1)))
+    {
+        return ipmi::responseUnspecifiedError();
+    }
+    if(peciWrPkgConfig(cpuId, CSR_INDEX, 0x0004, 0x00000002,sizeof(uint32_t)))
+    {
+        return ipmi::responseUnspecifiedError();
+    }
+
+    rank[0] = correrrcnt1 & 0x00007FFF;
+    rank[1] = (correrrcnt1 >> 16) & 0x00007FFF;
+    rank[2] = correrrcnt0 & 0x00007FFF;
+    rank[3] = (correrrcnt0 >> 16) & 0x00007FFF;
+
+    return ipmi::responseSuccess(rank);
+   
+}
+
+//======================================================================================================
 /* get gpio status Command (for manufacturing) 
 NetFun: 0x2E
 Cmd : 0x41
@@ -641,36 +865,27 @@ Response:
 #define PIN_SERVICE "xyz.openbmc_project.PSUSensor"
 #define PIN_INTERFACE "xyz.openbmc_project.Sensor.Value"
 
-ipmi_ret_t ipmi_Pnm_GetReading(ipmi_netfn_t netfn, ipmi_cmd_t cmd,
-                              ipmi_request_t request, ipmi_response_t response,
-                              ipmi_data_len_t data_len, ipmi_context_t context)
+ipmi::RspType<std::vector<uint8_t>> ipmi_Pnm_GetReading(uint8_t type, uint8_t reserved1, uint8_t reserved2)
 {
-    ipmi_ret_t ipmi_rc = IPMI_CC_OK;
     uint8_t domainID;
     uint8_t readingType;
     uint8_t highByte;
     uint8_t lowByte;
     int rc=0;
     double readingValue;
-    uint8_t responseData[3]={0};
+    std::vector<uint8_t> responseData(3,0);
 
     auto bus = sdbusplus::bus::new_default();
-    auto* requestData= reinterpret_cast<PnmGetReadingRequest*>(request);
 
-    if((int)*data_len != 3)
-    {
-        return IPMI_CC_REQ_DATA_LEN_INVALID;
-    }
-
-    domainID = requestData->type & 0x0F;
-    readingType = requestData->type >> 4;
+    domainID = type & 0x0F;
+    readingType = type >> 4;
     if (readingType == 0x00 || readingType == 0x06)
     {
         // get PSU PIN sensor reading value
         rc = getProperty(bus,PIN_OBJECT,"Value",readingValue,PIN_SERVICE,PIN_INTERFACE);
         if(rc<0)
         {
-            return IPMI_CC_UNSPECIFIED_ERROR;
+            return ipmi::responseUnspecifiedError();
         }
 
         highByte = static_cast<uint16_t>(readingValue) >> 8;
@@ -679,10 +894,9 @@ ipmi_ret_t ipmi_Pnm_GetReading(ipmi_netfn_t netfn, ipmi_cmd_t cmd,
         responseData[2]=highByte;
     }
 
-    responseData[0]=requestData->type;
-    memcpy(response, responseData, sizeof(responseData));
+    responseData[0]=type;
 
-    return ipmi_rc;
+    return ipmi::responseSuccess(responseData);
 }
 
 //===============================================================
@@ -738,7 +952,7 @@ ipmi::RspType<> ipmi_setFruField(uint8_t fruId, uint4_t field, uint4_t area, std
             break;
         case 1:
             // chassis information are
-            snprintf(command,sizeof(command),"echo c %d %s >> /usr/sbin/fruWrite",(int)field,string);
+            snprintf(command,sizeof(command),"echo c %d %s >> /usr/sbin/fruWrite",(int)field-1,string);
             break;
         case 2:
             // board information area
@@ -1286,24 +1500,278 @@ ipmi::RspType<> ipmi_RelinkLan()
 
     return ipmi::responseSuccess();
 }
+//=================================================================
+const static constexpr char* solPatternService = "xyz.openbmc_project.SolPatternSensor";
+const static constexpr char* solPatternInterface = "xyz.openbmc_project.Sensor.SOLPattern";
+const static constexpr char* solPatternObjPrefix = "/xyz/openbmc_project/sensors/pattern/Pattern";
+
+/*
+    Set SOL pattern func
+    NetFn: 0x3E / CMD: 0xB2
+*/
+ipmi::RspType<> ipmiSetSolPattern(uint8_t patternNum, std::vector<uint8_t> patternData)
+{
+    /* Pattern Number */
+    if((patternNum < 1) || (patternNum > 4))
+    {
+        sd_journal_print(LOG_CRIT, "[%s] invalid pattern number %d\n",
+                         __FUNCTION__, patternNum);
+        return ipmi::responseParmOutOfRange();;
+    }
+
+    /* Set pattern to dbus */
+    std::string solPatternObjPath = solPatternObjPrefix + std::to_string((patternNum));
+    std::string s(patternData.begin(), patternData.end());
+    std::shared_ptr<sdbusplus::asio::connection> dbus = getSdBus();
+    try
+    {
+        ipmi::setDbusProperty(*dbus, solPatternService, solPatternObjPath,
+                               solPatternInterface, "Pattern", s);
+    }
+    catch (const sdbusplus::exception::SdBusError& e)
+    {
+        return ipmi::responseUnspecifiedError();
+    }
+
+    return ipmi::responseSuccess();
+}
+
+//=================================================================
+/*
+    Get SOL pattern func
+    NetFn: 0x3E / CMD: 0xB3
+*/
+ipmi::RspType<std::vector<uint8_t>> ipmiGetSolPattern(uint8_t patternNum)
+{
+
+    /* Pattern Number */
+    if((patternNum < 1) || (patternNum > 4))
+    {
+        sd_journal_print(LOG_CRIT, "[%s] invalid pattern number %d\n",
+                         __FUNCTION__, patternNum);
+        return ipmi::responseParmOutOfRange();;
+    }
+
+    /* Get pattern to dbus */
+    std::string solPatternObjPath = solPatternObjPrefix + std::to_string((patternNum));
+    std::string patternData;
+
+    std::shared_ptr<sdbusplus::asio::connection> dbus = getSdBus();
+    try
+    {
+        auto value = ipmi::getDbusProperty(*dbus, solPatternService, solPatternObjPath,
+                               solPatternInterface, "Pattern");
+        patternData = std::get<std::string>(value);
+    }
+    catch (const sdbusplus::exception::SdBusError& e)
+    {
+        return ipmi::responseUnspecifiedError();
+    }
+    
+    std::vector<uint8_t> v(patternData.begin(), patternData.end());
+    return ipmi::responseSuccess(v);
+}
+
+//=======================================================================
+/* Get OCP card status
+NetFun: 0x30
+Cmd : 0x14
+Request:
+    Byte 1 : Status
+        01h : E810-CQDA1 100G OCP card
+Response:
+
+*/
+ipmi::RspType<> ipmi_GetOcpCard(uint8_t status)
+{
+
+    std::cerr << " set OCP card status to " << (int)status << '\n';
+
+    char command[100];
+    std::fstream file;
+
+    // Get Current OCP Card Status
+    file.open("/usr/sbin/ocpCard",std::ios::in);
+    if(!file)
+    {
+        memset(command,0,sizeof(command));
+        sprintf(command, "touch /usr/sbin/ocpCard");
+        system(command);
+    }
+    file.close();
+
+    memset(command,0,sizeof(command));
+    snprintf(command,sizeof(command),"echo %d > /usr/sbin/ocpCard",(int)status);
+    system(command);
+
+    return ipmi::responseSuccess();
+}
+
+//===============================================================
+/* BMC internal Generate crashdump
+NetFun: 0x30
+Cmd : 0x03
+Request:
+
+Response:
+    Byte 1 : Completion Code
+
+*/
+ipmi::RspType<> ipmi_GenCrashdump()
+{
+    uint8_t serviceResponse = 0;
+
+    constexpr auto service = "com.intel.crashdump";
+    constexpr auto path = "/com/intel/crashdump";
+    constexpr auto interface = "com.intel.crashdump.Stored";
+    constexpr auto genMethod = "IERR";
+
+    auto bus = sdbusplus::bus::new_default();
+
+    auto method = bus.new_method_call(service, path, interface, "GenerateStoredLog");
+    method.append(genMethod);
+
+    try
+    {
+        auto reply = bus.call(method);
+    }
+    catch (const sdbusplus::exception::SdBusError& e)
+    {
+        log<level::ERR>("Error in Generate IERR",entry("ERROR=%s", e.what()));
+        return ipmi::responseUnspecifiedError();
+    }
+
+    return ipmi::responseSuccess();
+}
+
+//=======================================================================
+/* Get or Set AMT status
+NetFun: 0x30
+Cmd : 0x16
+Request:
+    Byte 1 : Status (optional: To get AMT status directly)
+        00h : Disable AMT feature
+        01h : Enable AMT feature
+Response:
+    Byte 1 : Completion Code
+    Byte 2 : AMT status
+*/
+ipmi::RspType<uint8_t> ipmi_ConfigAmt(std::optional<uint8_t> configAmt)
+{
+    uint8_t amtResponse = 0;
+
+    constexpr auto service = "xyz.openbmc_project.Settings";
+    constexpr auto path = "/xyz/openbmc_project/oem/HostStatus";
+    constexpr auto hostStatusInterface = "xyz.openbmc_project.OEM.HostStatus";
+    constexpr auto amtStatus = "AmtStatus";
+
+    auto bus = sdbusplus::bus::new_default();
+
+    if(configAmt)
+    {
+        auto method = bus.new_method_call(service, path, PROPERTY_INTERFACE,"Set");
+        method.append(hostStatusInterface, amtStatus, sdbusplus::message::variant<bool>(configAmt.value() & 0x01));
+        bus.call_noreply(method);
+        amtResponse = (uint8_t)configAmt.value() & 0x01;
+    }
+    else
+    {
+        auto method = bus.new_method_call(service, path, PROPERTY_INTERFACE, "Get");
+        method.append(hostStatusInterface, amtStatus);
+
+        sdbusplus::message::variant<bool> result;
+        try
+        {
+            auto reply = bus.call(method);
+            reply.read(result);
+        }
+        catch (const sdbusplus::exception::SdBusError& e)
+        {
+            log<level::ERR>("Error in ConfigAmt Get",entry("ERROR=%s", e.what()));
+            return ipmi::responseUnspecifiedError();
+        }
+        amtResponse = (uint8_t)(sdbusplus::message::variant_ns::get<bool>(result));
+    }
+
+    return ipmi::responseSuccess(amtResponse);
+}
+
+//=======================================================================
+/* Get or Set watchdog2 timeout flag status
+NetFun: 0x30
+Cmd : 0x18
+Request:
+    Byte 1 : Status (optional: To get watchdog2 timeout flag directly)
+        00h : Clear watchdog2 timeout flag
+        01h : Set watchdog2 timeout flag
+Response:
+    Byte 1 : Completion Code
+    Byte 2 : Watchdog2 timeout flag
+*/
+ipmi::RspType<uint8_t> ipmi_ConfigWatchdog2(std::optional<uint8_t> configWatchdog2)
+{
+    uint8_t watchdog2Response = 0;
+
+    constexpr auto service = "xyz.openbmc_project.Settings";
+    constexpr auto path = "/xyz/openbmc_project/oem/HostStatus";
+    constexpr auto hostStatusInterface = "xyz.openbmc_project.OEM.HostStatus";
+    constexpr auto watchdog2Status = "watchdog2Status";
+
+    auto bus = sdbusplus::bus::new_default();
+
+    if(configWatchdog2)
+    {
+        auto method = bus.new_method_call(service, path, PROPERTY_INTERFACE,"Set");
+        method.append(hostStatusInterface, watchdog2Status, sdbusplus::message::variant<bool>(configWatchdog2.value() & 0x01));
+        bus.call_noreply(method);
+        watchdog2Response = (uint8_t)configWatchdog2.value() & 0x01;
+    }
+    else
+    {
+        auto method = bus.new_method_call(service, path, PROPERTY_INTERFACE, "Get");
+        method.append(hostStatusInterface, watchdog2Status);
+
+        sdbusplus::message::variant<bool> result;
+        try
+        {
+            auto reply = bus.call(method);
+            reply.read(result);
+        }
+        catch (const sdbusplus::exception::SdBusError& e)
+        {
+            log<level::ERR>("Error in configWatchdog2 Get",entry("ERROR=%s", e.what()));
+            return ipmi::responseUnspecifiedError();
+        }
+        watchdog2Response = (uint8_t)(sdbusplus::message::variant_ns::get<bool>(result));
+    }
+
+    return ipmi::responseSuccess(watchdog2Response);
+}
 
 void register_netfn_mct_oem()
 {
-    ipmi_register_callback(NETFUN_TWITTER_OEM, IPMI_CMD_ClearCmos, NULL, ipmiOpmaClearCmos, PRIVILEGE_ADMIN);
-    ipmi_register_callback(NETFUN_TWITTER_OEM, IPMI_CMD_PnmGetReading, NULL, ipmi_Pnm_GetReading, PRIVILEGE_ADMIN);
     ipmi::registerOemHandler(ipmi::prioMax, 0x0019fd, IPMI_CMD_FanPwmDuty, ipmi::Privilege::Admin, ipmi_tyan_FanPwmDuty);
     ipmi::registerOemHandler(ipmi::prioMax, 0x0019fd, IPMI_CMD_ManufactureMode, ipmi::Privilege::Admin, ipmi_tyan_ManufactureMode);
 	ipmi::registerOemHandler(ipmi::prioMax, IANA_TYAN, IPMI_CMD_FloorDuty, ipmi::Privilege::Admin, ipmi_tyan_FloorDuty);
     ipmi::registerOemHandler(ipmi::prioMax, IANA_TYAN, IPMI_CMD_ConfigEccLeakyBucket, ipmi::Privilege::Admin, ipmi_tyan_ConfigEccLeakyBucket);
+    ipmi::registerOemHandler(ipmi::prioMax, IANA_TYAN, IPMI_CMD_GetEccCount, ipmi::Privilege::Admin, ipmiGetEccCount);
     ipmi::registerOemHandler(ipmi::prioMax, IANA_TYAN, IPMI_CMD_gpioStatus, ipmi::Privilege::Admin, ipmi_tyan_getGpio);
-    ipmi::registerOemHandler(ipmi::prioMax, IANA_TYAN, IPMI_CMD_SetFruField, ipmi::Privilege::Admin, ipmi_setFruField);
+    // ipmi::registerOemHandler(ipmi::prioMax, IANA_TYAN, IPMI_CMD_SetFruField, ipmi::Privilege::Admin, ipmi_setFruField);
     ipmi::registerOemHandler(ipmi::prioMax, IANA_TYAN, IPMI_CMD_GetFruField, ipmi::Privilege::Admin, ipmi_getFruField);
     ipmi::registerOemHandler(ipmi::prioMax, IANA_TYAN, IPMI_CMD_GetFirmwareString, ipmi::Privilege::Admin, ipmi_getFirmwareString);
+    ipmi::registerHandler(ipmi::prioMax, NETFUN_TWITTER_OEM, IPMI_CMD_ClearCmos, ipmi::Privilege::Admin, ipmi_opma_clear_cmos);
+    ipmi::registerHandler(ipmi::prioMax, NETFUN_TWITTER_OEM, IPMI_CMD_PnmGetReading, ipmi::Privilege::Admin, ipmi_Pnm_GetReading);
     ipmi::registerHandler(ipmi::prioMax, NETFUN_TWITTER_OEM, IPMI_CMD_SendRawPeci, ipmi::Privilege::Admin, ipmi_sendRawPeci);
     ipmi::registerHandler(ipmi::prioMax, NETFUN_TWITTER_OEM, IPMI_CMD_RamdomDelayACRestorePowerON, ipmi::Privilege::Admin, ipmi_tyan_RamdomDelayACRestorePowerON);
     ipmi::registerHandler(ipmi::prioMax, NETFUN_TWITTER_OEM, IPMI_CMD_SetService, ipmi::Privilege::Admin, ipmi_SetService);
     ipmi::registerHandler(ipmi::prioMax, NETFUN_TWITTER_OEM, IPMI_CMD_GetService, ipmi::Privilege::Admin, ipmi_GetService);
     ipmi::registerHandler(ipmi::prioMax, NETFUN_TWITTER_OEM, IPMI_CMD_GetPostCode, ipmi::Privilege::Admin, ipmi_GetPostCode);
     ipmi::registerHandler(ipmi::prioMax, NETFUN_TWITTER_OEM, IPMI_CMD_RelinkLan, ipmi::Privilege::Admin, ipmi_RelinkLan);
+    ipmi::registerHandler(ipmi::prioMax, NETFUN_TWITTER_OEM, IPMI_CMD_GET_SOL_PATTERN, ipmi::Privilege::Admin, ipmiGetSolPattern);
+    ipmi::registerHandler(ipmi::prioMax, NETFUN_TWITTER_OEM, IPMI_CMD_SET_SOL_PATTERN, ipmi::Privilege::Admin, ipmiSetSolPattern);
+    ipmi::registerHandler(ipmi::prioMax, NETFUN_TWITTER_OEM, IPMI_CMD_GetOcpCard, ipmi::Privilege::Admin, ipmi_GetOcpCard);
+    ipmi::registerHandler(ipmi::prioMax, NETFUN_TWITTER_OEM, IPMI_CMD_GenCrashdump, ipmi::Privilege::Admin, ipmi_GenCrashdump);
+    ipmi::registerHandler(ipmi::prioMax, NETFUN_TWITTER_OEM, IPMI_CMD_ConfigAmt, ipmi::Privilege::Admin, ipmi_ConfigAmt);
+    ipmi::registerHandler(ipmi::prioMax, NETFUN_TWITTER_OEM, IPMI_CMD_ConfigWatchdog2, ipmi::Privilege::Admin, ipmi_ConfigWatchdog2);
 }
 }

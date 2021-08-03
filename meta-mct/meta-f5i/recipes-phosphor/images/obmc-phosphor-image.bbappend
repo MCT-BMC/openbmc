@@ -1,4 +1,3 @@
-FLASH_RWFS_OFFSET = "32768"
 
 OBMC_IMAGE_EXTRA_INSTALL_append_f5i =   " libgpiod \
                                           gpio-initial \
@@ -12,8 +11,6 @@ OBMC_IMAGE_EXTRA_INSTALL_append_f5i =   " libgpiod \
                                           obmc-ikvm \ 
                                           intel-ipmi-oem \
                                           phosphor-sel-logger \
-                                          s7106-sol-processing \
-                                          s7106-ipmi-oem \
                                           phosphor-pid-control \
                                           id-button \
                                           pwr-button \
@@ -31,4 +28,10 @@ OBMC_IMAGE_EXTRA_INSTALL_append_f5i =   " libgpiod \
                                           phosphor-host-postd \
                                           ethtool \
                                           mct-dcmi-power \
+                                          gdb \
+                                          mct-register-monitor \
+                                          pattern-matching \
+                                          state-manager-recheck \
+                                          srvcfg-manager \
+                                          twitter-ipmi-oem-bin \
                                         "

@@ -2,10 +2,21 @@
 
 echo "Enter Power on System action"
 
-#USE GPIOD2 to check power status
-#pwrstatus=$(/usr/bin/gpioget gpiochip0 26)
+for (( i=0; i<=6; i=i+1 ))
+do
+    duringPowerOff=$(systemctl is-active host-poweroff.service)
+    if [ "inactive" != $duringPowerOff ]; then
+        echo "During power off: $duringPowerOff"
+        sleep 1
+    else
+        break
+    fi
+done
 pwrstatus=$(busctl get-property org.openbmc.control.Power /org/openbmc/control/power0 org.openbmc.control.Power pgood | cut -d' ' -f2)
 if [ $pwrstatus -eq 0 ]; then
+    /usr/bin/gpioget gpiochip0 33 > /dev/null 
+    sleep 1	
+    echo "Execute Power on"
     # *** Push power button ***
     # GPIO E1 for power on
     /usr/bin/gpioset gpiochip0 33=0

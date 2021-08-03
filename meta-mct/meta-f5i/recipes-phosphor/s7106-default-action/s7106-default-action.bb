@@ -14,7 +14,12 @@ SRC_URI = " \
            file://initFruFlag.service \
            file://initFruFlag.sh \
            file://writeFRU.sh \
-           file://relinkLan.sh"
+           file://relinkLan.sh \
+           file://dhcp-check.service \
+           file://dhcp-check.sh \
+           file://rescan-nic-fru.service \
+           file://rescan-nic-fru.sh \
+           "
 
 DEPENDS = "systemd"
 RDEPENDS_${PN} = "bash"
@@ -22,7 +27,10 @@ RDEPENDS_${PN} = "bash"
 SYSTEMD_PACKAGES = "${PN}"
 SYSTEMD_SERVICE_${PN} = " \
                          disable-sw2.service \
-                         initFruFlag.service"
+                         initFruFlag.service \
+                         dhcp-check.service \
+                         rescan-nic-fru.service \
+                         "
 
 
 do_install() {
@@ -31,4 +39,6 @@ do_install() {
     install -m 0755 ${S}initFruFlag.sh ${D}/${sbindir}/
     install -m 0755 ${S}writeFRU.sh ${D}/${sbindir}/
     install -m 0755 ${S}relinkLan.sh ${D}/${sbindir}/
+    install -m 0755 ${S}dhcp-check.sh ${D}/${sbindir}/
+    install -m 0755 ${S}rescan-nic-fru.sh ${D}/${sbindir}/
 }

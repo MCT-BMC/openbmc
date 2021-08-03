@@ -1,0 +1,32 @@
+From 6043621d3a4d64acf815aafad93457eea1ecbb8e Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 2 Feb 2021 13:44:54 +0800
+Subject: [PATCH] Add interface for setting specified host status
+
+---
+ xyz/openbmc_project/OEM/HostStatus.interface.yaml | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+ create mode 100755 xyz/openbmc_project/OEM/HostStatus.interface.yaml
+
+diff --git a/xyz/openbmc_project/OEM/HostStatus.interface.yaml b/xyz/openbmc_project/OEM/HostStatus.interface.yaml
+new file mode 100755
+index 0000000..81403ff
+--- /dev/null
++++ b/xyz/openbmc_project/OEM/HostStatus.interface.yaml
+@@ -0,0 +1,13 @@
++description: >
++    Implement to provide status for host attributes.
++
++properties:
++    - name: AmtStatus
++      type: boolean
++      description: >
++         Setting of advanced memory test
++    - name: watchdog2Status
++      type: boolean
++      description: >
++         Timeout flag for watchdog2 timer
++# vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
+-- 
+2.7.4
+
